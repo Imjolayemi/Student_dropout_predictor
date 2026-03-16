@@ -1,50 +1,57 @@
 import streamlit as st
-import requests
+import joblib
+import numpy as np
 
-# 1. Setup the Page
-st.set_page_config(page_title="Student Dropout Predictor", page_icon="🎓")
+# 1. Load the "Brain" we created in Jupyter
+# We use st.cache_resource so the app only loads the file once (saves memory)
+@st.cache_resource
+def load_my_model():
+    return joblib.load("student_dropout_model.pkl")
+
+model = load_my_model()
+
+# 2. Setup the Page Title and Styling
+st.set_page_config(page_title="3MTT Dropout Predictor", page_icon="🎓")
 st.title("🎓 Student Dropout Risk Predictor")
-st.write("Enter student details below to analyze dropout risk using AI.")
+st.write("Enter student data below to get an instant risk assessment.")
 
-# 2. Securely get the API Key from Streamlit Secrets
-# (We will set this up in Step 6)
-HF_API_KEY = st.secrets["HF_API_KEY"]
-API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
-headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+# 3. Create the Input Fields (Matching your dataset features)
+# Note: We use the exact names we used in Jupyter: attendance and test scores
+st.subheader("Student Stats")
+name = st.text_input("Full Name of Student")
 
-# 3. User Input Fields
-name = st.text_input("Student Name")
-attendance = st.slider("Attendance Percentage (%)", 0, 100, 75)
-math_score = st.slider("Latest Math Score (0-100)", 0, 100, 50)
+# The numbers below match the ranges in your Nigerian dataset
+attendance = st.slider("Attendance Rate (%)", 0, 100, 85)
+test_score = st.slider("Average Test Score (0-100)", 0, 100, 50)
 
-# 4. Prediction Logic
-if st.button("Predict Risk"):
+# 4. The Prediction Logic
+if st.button("Analyze Student Risk"):
     if name:
-        # Create the 'Letter' (Prompt) for the AI
-        prompt = f"""
-        Analyze the following student data:
-        Name: {name}
-        Attendance: {attendance}%
-        Math Score: {math_score}/100
-
-        Based on this, classify the Dropout Risk as 'High', 'Medium', or 'Low'.
-        Provide a 2-sentence recommendation for the teacher.
-        """
+        # Step A: Prepare the data for the AI
+        # The AI expects a 2D list: [[attendance, score]]
+        features = np.array([[attendance, test_score]])
         
-        with st.spinner("The AI is thinking..."):
-            # Send request to Hugging Face
-            payload = {"inputs": prompt, "parameters": {"max_new_tokens": 150}}
-            response = requests.post(API_URL, headers=headers, json=payload)
-            
-            if response.status_code == 200:
-                result = response.json()[0]['generated_text']
-                # Clean up the output to show only the AI's reasoning
-                ai_answer = result.replace(prompt, "").strip()
-                
-                st.success("Analysis Complete!")
-                st.subheader("AI Assessment:")
-                st.write(ai_answer)
-            else:
-                st.error("Wait, the AI is busy. Please try again in a moment!")
+        # Step B: Make the prediction (0 = Stay, 1 = Dropout)
+        prediction = model.predict(features)[0]
+        
+        # Step C: Show the result to the teacher
+        st.divider()
+        if prediction == 1:
+            st.error(f"⚠️ **High Risk:** {name} is at risk of dropping out.")
+            st.markdown("""
+            **Recommended Actions:**
+            * Reach out to parents/guardians.
+            * Provide additional academic support in Math/English.
+            * Check for external factors (distance to school, fees).
+            """)
+        else:
+            st.success(f"✅ **Low Risk:** {name} is likely to continue their education.")
+            st.write("Keep up the great work and continue regular monitoring!")
     else:
-        st.warning("Please enter a student name.")
+        st.warning("Please enter a student name to continue.")
+
+# 5. Add a Footer for your 3MTT Project
+st.sidebar.info("Built for the 3MTT NextGen AI/ML Track.")
+st.sidebar.markdown("---")
+st.sidebar.write("Model: Random Forest Classifier")
+st.sidebar.write("Dataset: Nigeria Student Dropout Data")
